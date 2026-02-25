@@ -1,0 +1,638 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:math';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'bottom_nav_screen.dart';
+import 'theme.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
+  final TextEditingController _captchaController = TextEditingController();
+
+  bool isLoading = false;
+  bool otpSent = false;
+  String? _verificationId;
+  String _generatedCaptcha = "";
+  ConfirmationResult? _confirmationResult;
+
+  final Color primaryYellow = const Color(0xFFFFD700);
+  final Color accentOrange = const Color(0xFFFF4500);
+  final Color brandDark = const Color(0xFF1A1A1A);
+
+  @override
+  void initState() {
+    super.initState();
+    _generateCaptcha();
+  }
+
+  void _generateCaptcha() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    Random rnd = Random();
+    String result = String.fromCharCodes(Iterable.generate(
+      4,
+      (_) => chars.codeUnitAt(rnd.nextInt(chars.length)),
+    ));
+    setState(() {
+      _generatedCaptcha = result;
+      _captchaController.clear();
+    });
+  }
+
+  Future<void> _verifyPhoneNumber() async {
+    String phone = _phoneController.text.trim();
+    if (phone.isEmpty || phone.length != 10) {
+      _showSnack("Phone number must be exactly 10 digits");
+      return;
+    }
+
+    if (_captchaController.text.trim().toUpperCase() != _generatedCaptcha) {
+      _showSnack("Incorrect CAPTCHA. Please try again.");
+      _generateCaptcha();
+      return;
+    }
+
+    if (!phone.startsWith('+')) {
+      phone = '+91$phone'; // Assuming India for +91, as in the HTML UI
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      if (kIsWeb) {
+        _confirmationResult = await _auth.signInWithPhoneNumber(phone);
+        if (mounted) {
+          setState(() {
+            otpSent = true;
+            isLoading = false;
+          });
+          _showSnack("OTP Sent to $phone");
+        }
+      } else {
+        await _auth.verifyPhoneNumber(
+          phoneNumber: phone,
+          verificationCompleted: (PhoneAuthCredential credential) async {
+            await _auth.signInWithCredential(credential);
+            if (!mounted) return;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const BottomNavScreen()),
+            );
+          },
+          verificationFailed: (FirebaseAuthException e) {
+            if (mounted) {
+              setState(() => isLoading = false);
+              _showSnack("Verification Failed: [${e.code}] ${e.message}");
+            }
+          },
+          codeSent: (String verificationId, int? resendToken) {
+            if (mounted) {
+              setState(() {
+                _verificationId = verificationId;
+                otpSent = true;
+                isLoading = false;
+              });
+              _showSnack("OTP Sent to $phone");
+            }
+          },
+          codeAutoRetrievalTimeout: (String verificationId) {
+            if (mounted) _verificationId = verificationId;
+          },
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => isLoading = false);
+      _showSnack("Error: ${e.toString()}");
+    }
+  }
+
+  Future<void> _signInWithOTP() async {
+    if (_otpController.text.trim().isEmpty) {
+      _showSnack("Please enter OTP");
+      return;
+    }
+
+    if (!kIsWeb && _verificationId == null) {
+       _showSnack("Verification ID missing. Try again.");
+       return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      if (kIsWeb) {
+        if (_confirmationResult != null) {
+          await _confirmationResult!.confirm(_otpController.text.trim());
+        } else {
+          throw FirebaseAuthException(code: 'invalid-verification-id', message: "No verification started.");
+        }
+      } else {
+        PhoneAuthCredential credential = PhoneAuthProvider.credential(
+          verificationId: _verificationId!,
+          smsCode: _otpController.text.trim(),
+        );
+        await _auth.signInWithCredential(credential);
+      }
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const BottomNavScreen()),
+      );
+    } catch (e) {
+      _showSnack("Invalid OTP or Error: $e");
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _otpController.dispose();
+    _captchaController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: primaryYellow,
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [const Color(0xFFFFF9E0), primaryYellow],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              // TOP HALF: Branding & Illustrations
+              Expanded(
+                flex: 4,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Faded icons in background
+                    Positioned(
+                      top: 40,
+                      left: 40,
+                      child: Opacity(
+                        opacity: 0.2,
+                        child: Icon(Icons.fastfood, size: 60, color: brandDark),
+                      ),
+                    ),
+                    Positioned(
+                      top: 80,
+                      right: 40,
+                      child: Transform.rotate(
+                        angle: 0.2,
+                        child: Opacity(
+                          opacity: 0.2,
+                          child: Icon(Icons.shopping_bag, size: 70, color: brandDark),
+                        ),
+                      ),
+                    ),
+                    
+                    // Main Content
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+                          ),
+                          child: Icon(Icons.bolt, size: 50, color: accentOrange),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "Worth",
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 40,
+                                fontWeight: FontWeight.w800,
+                                color: brandDark,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                            Text(
+                              "It",
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 40,
+                                fontWeight: FontWeight.w800,
+                                color: accentOrange,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Groceries, food, and essentials\ndelivered in minutes.",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: brandDark.withValues(alpha: 0.7),
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.moped, size: 40, color: brandDark.withValues(alpha: 0.9)),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "SUPER FAST",
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: accentOrange,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                                Text(
+                                  "Delivery Partner",
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: brandDark.withValues(alpha: 0.9),
+                                  ),
+                                ),
+                              ],
+                            )
+                          ],
+                        )
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // BOTTOM HALF: Login Card
+              Expanded(
+                flex: 6,
+                child: Container(
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(40),
+                      topRight: Radius.circular(40),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 20,
+                        offset: Offset(0, -5),
+                      )
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                    child: Column(
+                      children: [
+                        // Drag Handle
+                        Container(
+                          width: 50,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        
+                        Text(
+                          "Login or Signup",
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: brandDark,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        if (!otpSent) ...[
+                          // Phone Number Input
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey[200]!),
+                            ),
+                            child: Row(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        "+91",
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.expand_more, size: 16, color: Colors.grey[400]),
+                                    ],
+                                  ),
+                                ),
+                                Container(width: 1, height: 24, color: Colors.grey[200]),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _phoneController,
+                                    keyboardType: TextInputType.phone,
+                                    maxLength: 10,
+                                    decoration: InputDecoration(
+                                      counterText: "",
+                                      hintText: "Enter Mobile Number",
+                                      hintStyle: GoogleFonts.plusJakartaSans(
+                                        color: Colors.grey[400],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      border: InputBorder.none,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          // Captcha Input
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.grey[200]!)
+                                  ),
+                                  child: Text(
+                                    _generatedCaptcha.split("").join(" "),
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.courierPrime(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 4,
+                                      color: brandDark,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: _generateCaptcha,
+                                icon: Icon(Icons.refresh, color: accentOrange),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _captchaController,
+                            decoration: InputDecoration(
+                              hintText: "Enter Captcha",
+                              hintStyle: GoogleFonts.plusJakartaSans(color: Colors.grey[400]),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: Colors.grey[200]!),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: Colors.grey[200]!),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: accentOrange),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+                          
+                          // Continue Button
+                          if (isLoading)
+                             const CircularProgressIndicator(color: Color(0xFFFF4500))
+                          else
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _verifyPhoneNumber,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accentOrange,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 4,
+                                  shadowColor: accentOrange.withValues(alpha: 0.4),
+                                ),
+                                child: Text(
+                                  "Continue",
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ] else ...[
+                          // OTP STATE
+                          Text(
+                            "OTP Sent to ${_phoneController.text}",
+                            style: GoogleFonts.plusJakartaSans(color: Colors.grey[600], fontSize: 13),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _otpController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              hintText: "Enter 6-digit OTP",
+                              hintStyle: GoogleFonts.plusJakartaSans(color: Colors.grey[400]),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: Colors.grey[200]!),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: Colors.grey[200]!),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          if (isLoading)
+                             const CircularProgressIndicator(color: Color(0xFFFF4500))
+                          else
+                            Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: _signInWithOTP,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: accentOrange,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      "Verify & Login",
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextButton(
+                                  onPressed: () => setState(() => otpSent = false),
+                                  child: Text(
+                                    "Change Phone Number",
+                                    style: GoogleFonts.plusJakartaSans(color: accentOrange),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+
+                        // Divider
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 32),
+                          child: Row(
+                            children: [
+                              Expanded(child: Divider(color: Colors.grey[200])),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  "OR LOGIN WITH",
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[400],
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: Colors.grey[200])),
+                            ],
+                          ),
+                        ),
+
+                        // Social Login
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey[200]!),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.person, size: 24, color: Colors.grey[700]), // Google icon replacement
+                                    const SizedBox(width: 8),
+                                    Text("Google", style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey[200]!),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.apple, size: 20, color: Colors.grey[700]),
+                                    const SizedBox(width: 8),
+                                    Text("Apple", style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Footer
+                        RichText(
+                          text: TextSpan(
+                            style: GoogleFonts.plusJakartaSans(color: brandDark, fontSize: 12),
+                            children: [
+                              const TextSpan(text: "New here? "),
+                              TextSpan(
+                                text: "Create account",
+                                style: TextStyle(color: accentOrange, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "By continuing, you agree to our Terms of Service & Privacy Policy",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            color: Colors.grey[400],
+                            fontSize: 10,
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

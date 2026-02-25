@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "250098409902",
+    "project_id": "worthit-58ab4",
+    "storage_bucket": "worthit-58ab4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:250098409902:android:8f94f25ea13a1f6e1da83f",
+        "android_client_info": {
+          "package_name": "com.example.worthit_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "250098409902-03nl2pqig00f4uohc1acsgg18336mp72.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCouV3iA6EoRzreSVPNLcZt08AM7s1FFuA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "250098409902-03nl2pqig00f4uohc1acsgg18336mp72.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "250098409902-vhicd33pg4dk6i39elmev71avnp0t015.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.worthitApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
